@@ -1,0 +1,97 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Hand Detector</title>
+</head>
+<body>
+    <h1>Hand Detector (Offline)</h1>
+    <button onclick="connectArduino()">Connect to Arduino</button>
+    <button onclick="init()">Start Camera</button>
+    <div id="webcam-container"></div>
+    <div id="label-container"></div>
+
+    <script src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@teachablemachine/image"></script>
+    
+    <script>
+        let model, webcam, labelContainer, maxPredictions;
+        let serialPort, writer;
+
+        // **Set your model path correctly**  
+        const URL = "file:///C:/Users/12poo/Downloads/Embedded-Image/";  
+
+        async function connectArduino() {
+            try {
+                serialPort = await navigator.serial.requestPort();
+                await serialPort.open({ baudRate: 9600 });
+                writer = serialPort.writable.getWriter();
+                console.log("Connected to Arduino!");
+            } catch (error) {
+                console.error("Error connecting to Arduino:", error);
+            }
+        }
+
+        async function init() {
+            try {
+                const modelURL = URL + "model.json";
+                const metadataURL = URL + "metadata.json";
+
+                model = await tmImage.load(modelURL, metadataURL);
+                maxPredictions = model.getTotalClasses();
+
+                webcam = new tmImage.Webcam(200, 200, true);
+                await webcam.setup();
+                await webcam.play();
+                window.requestAnimationFrame(loop);
+
+                document.getElementById("webcam-container").appendChild(webcam.canvas);
+                labelContainer = document.getElementById("label-container");
+                for (let i = 0; i < maxPredictions; i++) {
+                    labelContainer.appendChild(document.createElement("div"));
+                }
+
+                console.log("✅ Model Loaded Successfully!");
+            } catch (error) {
+                console.error("❌ Error loading model:", error);
+            }
+        }
+
+        async function loop() {
+            webcam.update();
+            await predict();
+            window.requestAnimationFrame(loop);
+        }
+
+        async function predict() {
+            const prediction = await model.predict(webcam.canvas);
+            let detectedLabel = "";
+            let maxProb = 0;
+
+            for (let i = 0; i < maxPredictions; i++) {
+                if (prediction[i].probability > maxProb) {
+                    maxProb = prediction[i].probability;
+                    detectedLabel = prediction[i].className;
+                }
+                labelContainer.childNodes[i].innerHTML =
+                    prediction[i].className + ": " + prediction[i].probability.toFixed(2);
+            }
+
+            if (detectedLabel === "Right Hand") {
+                await sendData("1");
+            } else if (detectedLabel === "Left Hand") {
+                await sendData("0");
+            }
+        }
+
+        async function sendData(command) {
+            if (writer) {
+                const data = new TextEncoder().encode(command + "\n");
+                await writer.write(data);
+                console.log("Sent to Arduino:", command);
+            }
+        }
+    </script>
+</body>
+</html>
